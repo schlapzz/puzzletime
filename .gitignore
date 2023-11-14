@@ -55,3 +55,6 @@ tags
 
 # bundler tools dir
 /vendor/tools
+/dagger.gen.go
+/internal/querybuilder/
+/querybuilder/

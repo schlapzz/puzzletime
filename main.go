@@ -2,33 +2,35 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
 
 type Ptime struct{}
 
 func (m *Ptime) Test(ctx context.Context) error {
 
-	pgSvc, err := dag.Container().From("postgres:11").WithEnvVariable("POSTGRES_PASSWORD", "postgres").WithExposedPort(5432).AsService().Start(ctx)
-	if err != nil {
-		return err
-	}
+	workDir := dag.Host().Directory(".")
 
-	memcSvc, err := dag.Container().From("memcached").WithExposedPort(11211).AsService().Start(ctx)
-	if err != nil {
-		return err
-	}
+	pgSvc := dag.Container().From("postgres:11").WithEnvVariable("POSTGRES_PASSWORD", "postgres").WithExposedPort(5432).AsService()
 
-	_, err = dag.Container().From("ruby:2.7").
+	memcSvc := dag.Container().From("memcached").WithExposedPort(11211).AsService()
+
+	_, err := dag.Container().From("ruby:2.7").
 		WithServiceBinding("postgres", pgSvc).
 		WithServiceBinding("memcached", memcSvc).
 		WithEnvVariable("RAILS_TEST_DB_NAME", "postgres").
 		WithEnvVariable("RAILS_TEST_DB_USERNAME", "postgres").
 		WithEnvVariable("RAILS_TEST_DB_PASSWORD", "postgres").
+		WithEnvVariable("RAILS_TEST_DB_HOST", "postgres").
 		WithEnvVariable("RAILS_ENV", "test").
 		WithEnvVariable("CI", "true").
 		WithEnvVariable("PGDATESTYLE", "German").
-		WithExec([]string{"sudo", "apt-get", "-yqq", "install", "libpq-dev"}).
-		WithExec([]string{"gem", "install", "bundler", "--version", "'~> 2'"}).
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "-yqq", "install", "libpq-dev", "nodejs", "npm", "rubygems"}).
+		WithDirectory("/src", workDir).
+		WithWorkdir("/src").
+		WithExec([]string{"gem", "install", "bundler", "--version", "~> 2"}).
 		WithExec([]string{"bundle", "install", "--jobs", "4", "--retry", "3"}).
 		WithExec([]string{"bundle", "exec", "rails", "db:create"}).
 		WithExec([]string{"bundle", "exec", "rails", "db:migrate"}).
@@ -40,10 +42,95 @@ func (m *Ptime) Test(ctx context.Context) error {
 	return err
 }
 
+func (m *Ptime) Puilt(ctx context.Context) error {
+
+	workdir := dag.Host().Directory(".")
+
+	rubyContainer := dag.Gale().Run(GaleRunOpts{
+		Source:   workdir,
+		Workflow: "Code Style Review",
+	}).Sync()
+
+	_, err := rubyContainer.
+		WithEnvVariable("RAILS_TEST_DB_NAME", "postgres").
+		WithEnvVariable("RAILS_TEST_DB_USERNAME", "postgres").
+		WithEnvVariable("RAILS_TEST_DB_PASSWORD", "postgres").
+		WithEnvVariable("RAILS_ENV", "test").
+		WithEnvVariable("CI", "true").
+		WithEnvVariable("PGDATESTYLE", "German").
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "-yqq", "install", "libpq-dev", "nodejs", "npm", "rubygems"}).
+		//WithWorkdir("/src").
+		WithExec([]string{"gem", "install", "bundler", "--version", "~> 2"}).
+		WithExec([]string{"bundle", "install", "--jobs", "4", "--retry", "3"}).
+		WithEnvVariable("CACHE_BUSERT", fmt.Sprintf("%d", time.Now().UnixMilli())).
+		WithExec([]string{"bundle", "exec", "rails", "db:create"}).
+		WithExec([]string{"bundle", "exec", "rails", "db:migrate"}).
+		WithExec([]string{"bundle", "exec", "rails", "test"}).Sync(ctx)
+	return err
+}
+
 func (m *Ptime) Lint(ctx context.Context) error {
 	return nil
 }
 
 func (m *Ptime) Build(ctx context.Context) error {
 	return nil
+}
+
+// inputs:
+//
+//	github_token:
+//	  description: 'GITHUB_TOKEN'
+//	  default: ${{ github.token }}
+//	rubocop_version:
+//	  description: 'Rubocop version'
+//	rubocop_extensions:
+//	  description: 'Rubocop extensions'
+//	  default: 'rubocop-rails rubocop-performance rubocop-rspec rubocop-i18n rubocop-rake'
+//	rubocop_flags:
+//	  description: 'Rubocop flags. (rubocop <rubocop_flags>)'
+//	  default: ''
+//	tool_name:
+//	  description: 'Tool name to use for reviewdog reporter'
+//	  default: 'rubocop'
+//	level:
+//	  description: 'Report level for reviewdog [info,warning,error]'
+//	  default: 'error'
+//	reporter:
+//	  description: |
+//	    Reporter of reviewdog command [github-pr-check,github-check,github-pr-review].
+//	    Default is github-pr-check.
+//	  default: 'github-pr-check'
+//	filter_mode:
+//	  description: |
+//	    Filtering mode for the reviewdog command [added,diff_context,file,nofilter].
+//	    Default is added.
+//	  default: 'added'
+//	fail_on_error:
+//	  description: |
+//	    Exit code for reviewdog when errors are found [true,false]
+//	    Default is `false`.
+//	  default: 'false'
+//	reviewdog_flags:
+//	  description: 'Additional reviewdog flags'
+//	  default: ''
+//	workdir:
+//	  description: "The directory from which to look for and run Rubocop. Default '.'"
+//	  default: '.'
+//	skip_install:
+//	  description: "Do not install Rubocop or its extensions. Default: `false`"
+//	  default: 'false'
+//	use_bundler:
+//	  description: "Run Rubocop with bundle exec. Default: `false`"
+//	  default: 'false'
+func (m *Ptime) RubocopReviewdog(ctx context.Context) error {
+
+	_, err := dag.Container().From("ubuntu").
+		WithWorkdir("/src").
+		WithExec([]string{"wget", "https://raw.githubusercontent.com/reviewdog/action-rubocop/master/script.sh"}).
+		WithExec([]string{"chmod", "+x", "./script.sh"}).
+		WithExec([]string{"sh", "-c", "./script.sh"}).Sync(ctx)
+
+	return err
 }

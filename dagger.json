@@ -1,4 +1,7 @@
 {
   "name": "ptime",
-  "sdk": "go"
+  "sdk": "go",
+  "dependencies": [
+    "github.com/aweris/gale/daggerverse/gale@9208407b40475f799489fa8bf1cb6cd6c5ec6065"
+  ]
 }
