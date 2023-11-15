@@ -57,3 +57,6 @@ tags
 /vendor/tools
 
 TAGS
+/dagger.gen.go
+/internal/querybuilder/
+/querybuilder/

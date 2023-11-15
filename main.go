@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"time"
 )
 
 type Ptime struct{}
@@ -16,7 +14,7 @@ func (m *Ptime) Test(ctx context.Context) error {
 
 	memcSvc := dag.Container().From("memcached").WithExposedPort(11211).AsService()
 
-	_, err := dag.Container().From("ruby:2.7").
+	_, err := dag.Container().From("ruby:3.2.1").
 		WithServiceBinding("postgres", pgSvc).
 		WithServiceBinding("memcached", memcSvc).
 		WithEnvVariable("RAILS_TEST_DB_NAME", "postgres").
@@ -27,13 +25,17 @@ func (m *Ptime) Test(ctx context.Context) error {
 		WithEnvVariable("CI", "true").
 		WithEnvVariable("PGDATESTYLE", "German").
 		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "-yqq", "install", "libpq-dev", "nodejs", "npm", "rubygems"}).
+		WithExec([]string{"apt-get", "-yqq", "install", "libpq-dev", "nodejs", "npm", "rubygems", "libvips-dev"}).
 		WithDirectory("/src", workDir).
 		WithWorkdir("/src").
+		WithExec([]string{"mv", "_vendor", "vendor"}).
+		WithExec([]string{"wget", "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"}).
+		WithExec([]string{"sh", "-c", "dpkg -i google-chrome-stable_current_amd64.deb || apt -yqq --fix-broken install"}).
 		WithExec([]string{"gem", "install", "bundler", "--version", "~> 2"}).
 		WithExec([]string{"bundle", "install", "--jobs", "4", "--retry", "3"}).
 		WithExec([]string{"bundle", "exec", "rails", "db:create"}).
 		WithExec([]string{"bundle", "exec", "rails", "db:migrate"}).
+		WithExec([]string{"bundle", "exec", "rails", "assets:precompile"}).
 		WithExec([]string{"bundle", "exec", "rails", "test"}).Sync(ctx)
 
 	pgSvc.Stop(ctx)
@@ -42,6 +44,7 @@ func (m *Ptime) Test(ctx context.Context) error {
 	return err
 }
 
+/*
 func (m *Ptime) Puilt(ctx context.Context) error {
 
 	workdir := dag.Host().Directory(".")
@@ -78,7 +81,7 @@ func (m *Ptime) Lint(ctx context.Context) error {
 
 func (m *Ptime) Build(ctx context.Context) error {
 	return nil
-}
+}*/
 
 // inputs:
 //
